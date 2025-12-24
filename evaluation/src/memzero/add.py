@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from mem0 import MemoryClient
+from mem0 import Memory
 
 load_dotenv()
 
@@ -42,15 +42,55 @@ Generate personal memories that follow these guidelines:
 """
 
 
+def get_mem0_config(is_graph=False):
+    """获取 mem0 本地模式配置，使用 DeepSeek 和 Qwen"""
+    config = {
+        "llm": {
+            "provider": "openai",
+            "config": {
+                "model": os.getenv("MODEL", "deepseek-chat"),
+                "api_key": os.getenv("DEEPSEEK_API_KEY"),
+                "openai_base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+            },
+        },
+        "embedder": {
+            "provider": "openai",
+            "config": {
+                "model": os.getenv("EMBEDDING_MODEL", "text-embedding-v3"),
+                "api_key": os.getenv("QWEN_API_KEY"),
+                "openai_base_url": os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+                "embedding_dims": 1024,  # Qwen text-embedding-v3 维度
+            },
+        },
+        "vector_store": {
+            "provider": "qdrant",
+            "config": {
+                "collection_name": "mem0_evaluation",
+                "path": "./qdrant_data",  # 本地存储
+            },
+        },
+        "custom_prompt": custom_instructions,
+    }
+
+    if is_graph:
+        config["graph_store"] = {
+            "provider": "neo4j",
+            "config": {
+                "url": os.getenv("NEO4J_URL", "bolt://localhost:7687"),
+                "username": os.getenv("NEO4J_USERNAME", "neo4j"),
+                "password": os.getenv("NEO4J_PASSWORD", "password"),
+            },
+        }
+
+    return config
+
+
 class MemoryADD:
     def __init__(self, data_path=None, batch_size=2, is_graph=False):
-        self.mem0_client = MemoryClient(
-            api_key=os.getenv("MEM0_API_KEY"),
-            org_id=os.getenv("MEM0_ORGANIZATION_ID"),
-            project_id=os.getenv("MEM0_PROJECT_ID"),
-        )
+        # 使用本地 mem0，配置 DeepSeek 和 Qwen
+        config = get_mem0_config(is_graph)
+        self.mem0_client = Memory.from_config(config)
 
-        self.mem0_client.update_project(custom_instructions=custom_instructions)
         self.batch_size = batch_size
         self.data_path = data_path
         self.data = None
@@ -66,8 +106,9 @@ class MemoryADD:
     def add_memory(self, user_id, message, metadata, retries=3):
         for attempt in range(retries):
             try:
+                # 本地 mem0 Memory 类的 add 方法参数略有不同
                 _ = self.mem0_client.add(
-                    message, user_id=user_id, version="v2", metadata=metadata, enable_graph=self.is_graph
+                    message, user_id=user_id, metadata=metadata
                 )
                 return
             except Exception as e:
@@ -91,8 +132,14 @@ class MemoryADD:
         speaker_b_user_id = f"{speaker_b}_{idx}"
 
         # delete all memories for the two users
-        self.mem0_client.delete_all(user_id=speaker_a_user_id)
-        self.mem0_client.delete_all(user_id=speaker_b_user_id)
+        try:
+            self.mem0_client.delete_all(user_id=speaker_a_user_id)
+        except Exception:
+            pass  # 如果没有记忆，忽略错误
+        try:
+            self.mem0_client.delete_all(user_id=speaker_b_user_id)
+        except Exception:
+            pass  # 如果没有记忆，忽略错误
 
         for key in conversation.keys():
             if key in ["speaker_a", "speaker_b"] or "date" in key or "timestamp" in key:

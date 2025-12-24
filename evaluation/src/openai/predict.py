@@ -6,8 +6,9 @@ from collections import defaultdict
 
 from dotenv import load_dotenv
 from jinja2 import Template
-from openai import OpenAI
 from tqdm import tqdm
+
+from src.utils import get_llm_client
 
 load_dotenv()
 
@@ -55,7 +56,7 @@ ANSWER_PROMPT = """
 class OpenAIPredict:
     def __init__(self, model="gpt-4o-mini"):
         self.model = model
-        self.openai_client = OpenAI()
+        self.llm_client = get_llm_client()
         self.results = defaultdict(list)
 
     def search_memory(self, idx):
@@ -94,7 +95,7 @@ class OpenAIPredict:
         answer_prompt = template.render(memories=memories, question=question)
 
         t1 = time.time()
-        response = self.openai_client.chat.completions.create(
+        response = self.llm_client.chat.completions.create(
             model=os.getenv("MODEL"), messages=[{"role": "system", "content": answer_prompt}], temperature=0.0
         )
         t2 = time.time()

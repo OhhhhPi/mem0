@@ -11,13 +11,14 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.store.memory import InMemoryStore
 from langgraph.utils.config import get_store
 from langmem import create_manage_memory_tool, create_search_memory_tool
-from openai import OpenAI
 from prompts import ANSWER_PROMPT
 from tqdm import tqdm
 
+from src.utils import get_llm_client
+
 load_dotenv()
 
-client = OpenAI()
+client = get_llm_client()
 
 ANSWER_PROMPT_TEMPLATE = Template(ANSWER_PROMPT)
 
@@ -60,14 +61,17 @@ class LangMem:
     def __init__(
         self,
     ):
+        # 注意：LangMem 需要配置 embedding，这里使用 Qwen embedding
+        # 需要设置环境变量 OPENAI_API_KEY 和 OPENAI_BASE_URL 指向 Qwen
         self.store = InMemoryStore(
             index={
-                "dims": 1536,
+                "dims": 1024,  # Qwen text-embedding-v3 维度
                 "embed": f"openai:{os.getenv('EMBEDDING_MODEL')}",
             }
         )
         self.checkpointer = MemorySaver()  # Checkpoint graph state
 
+        # LangMem agent 使用 DeepSeek 作为 LLM
         self.agent = create_react_agent(
             f"openai:{os.getenv('MODEL')}",
             prompt=prompt,
